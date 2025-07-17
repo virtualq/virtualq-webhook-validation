@@ -40,7 +40,7 @@ public class WebhookValidator
         return new WebhookValidator(privateKey);
     }
 
-    public string PublicKey
+    public string PublicKeyDerBase64
     {
         get
         {
@@ -55,6 +55,22 @@ public class WebhookValidator
         signer.Init(false, _publicKey);
         signer.BlockUpdate(payload, 0, payload.Length);
         return signer.VerifySignature(signature);
+    }
+
+    public async Task<bool> ValidateSignature(HttpContext context)
+    {
+        context.Request.EnableBuffering();
+
+        var signature = GetSignatureFromHeaders(context);
+        if (signature == null)
+        {
+            return false;
+        }
+
+        using var stream = new MemoryStream();
+        await context.Request.Body.CopyToAsync(stream);
+        context.Request.Body.Position = 0;
+        return ValidateSignature(stream.ToArray(), signature);
     }
 
     public byte[] SignPayload(byte[] payload)
@@ -72,16 +88,7 @@ public class WebhookValidator
 
     public async ValueTask<object?> Filter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        using var reader = new StreamReader(context.HttpContext.Request.Body);
-        var payload = await reader.ReadToEndAsync();
-        var signature = GetSignatureFromHeaders(context.HttpContext);
-        if (signature == null)
-        {
-            return Results.Unauthorized();
-        }
-
-        var valid = ValidateSignature(Encoding.UTF8.GetBytes(payload), signature);
-        if (!valid)
+        if (!await ValidateSignature(context.HttpContext))
         {
             return Results.Unauthorized();
         }

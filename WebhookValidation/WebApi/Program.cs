@@ -5,6 +5,11 @@ var builder = WebApplication.CreateBuilder(args);
 var options = new WebhookValidationOptions();
 builder.Configuration.GetSection("WebhookValidation").Bind(options);
 
+var validator = WebhookValidator.FromPublicKeyDerBase64(options.PublicKeyDerBase64!);
+
+builder.Services.AddSingleton(validator);
+builder.Services.AddScoped<WebhookSignatureValidationFilter>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -15,8 +20,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
-var validator = WebhookValidator.FromPublicKeyDerBase64(options.PublicKeyDerBase64!);
 
 app.MapPost("/api/v1/webhook", (HttpContext context) => "").AddEndpointFilter(validator.Filter);
 
