@@ -1,3 +1,4 @@
+using System.Text;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
@@ -9,16 +10,27 @@ public class WebhookValidator
     private readonly Ed25519PublicKeyParameters _publicKey;
     private readonly Ed25519PrivateKeyParameters? _privateKey;
 
-    public WebhookValidator(string publicKeyDerBase64)
-    {
-        var decoded = Convert.FromBase64String(publicKeyDerBase64);
-        _publicKey = (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(decoded);
-    }
-
     private WebhookValidator(Ed25519PrivateKeyParameters privateKey)
     {
         _privateKey = privateKey;
         _publicKey = privateKey.GeneratePublicKey();
+    }
+
+    private WebhookValidator(Ed25519PublicKeyParameters publicKey)
+    {
+        _publicKey = publicKey;
+    }
+
+    public static WebhookValidator FromPublicKeyDerBase64(string publicKeyDerBase64)
+    {
+        var decoded = Convert.FromBase64String(publicKeyDerBase64);
+        var publicKey = (Ed25519PublicKeyParameters)PublicKeyFactory.CreateKey(decoded);
+        if (publicKey == null)
+        {
+            throw new InvalidOperationException("Failed to parse key as Ed25519 public key!");
+        }
+
+        return new WebhookValidator(publicKey!);
     }
 
     public static WebhookValidator FromPrivateKeyDerBase64(string privateKeyDerBase64)
@@ -56,5 +68,43 @@ public class WebhookValidator
         signer.Init(true, _privateKey);
         signer.BlockUpdate(payload, 0, payload.Length);
         return signer.GenerateSignature();
+    }
+
+    public async ValueTask<object?> Filter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        using var reader = new StreamReader(context.HttpContext.Request.Body);
+        var payload = await reader.ReadToEndAsync();
+        var signature = GetSignatureFromHeaders(context.HttpContext);
+        if (signature == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var valid = ValidateSignature(Encoding.UTF8.GetBytes(payload), signature);
+        if (!valid)
+        {
+            return Results.Unauthorized();
+        }
+
+        return await next(context);
+    }
+
+    private static byte[]? GetSignatureFromHeaders(HttpContext context)
+    {
+        var signatureHeader = context.Request.Headers["X-Body-Signature"].First();
+        if (string.IsNullOrEmpty(signatureHeader))
+        {
+            return null;
+        }
+
+        try
+        {
+            var decoded = Convert.FromBase64String(signatureHeader);
+            return decoded;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 }

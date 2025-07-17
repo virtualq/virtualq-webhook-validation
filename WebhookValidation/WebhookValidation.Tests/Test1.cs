@@ -18,7 +18,7 @@ public sealed class WebhookValidationConstructors
     public void TestConstructor()
     {
         const string pubKeyDerBase64 = "MCowBQYDK2VwAyEA+6AXassBxLfnY3gXCLLEfP8RuiVJCyLvFwqOdeotrHw=";
-        var validator = new WebhookValidator(pubKeyDerBase64);
+        var validator = WebhookValidator.FromPublicKeyDerBase64(pubKeyDerBase64);
         var actual = validator.PublicKey;
         Assert.AreEqual(actual, pubKeyDerBase64);
     }

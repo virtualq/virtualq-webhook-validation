@@ -1,8 +1,9 @@
+using WebhookValidation;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+var options = new WebhookValidationOptions();
+builder.Configuration.GetSection("WebhookValidation").Bind(options);
 
 var app = builder.Build();
 
@@ -14,28 +15,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+var validator = WebhookValidator.FromPublicKeyDerBase64(options.PublicKeyDerBase64!);
+
+app.MapPost("/api/v1/webhook", (HttpContext context) => "").AddEndpointFilter(validator.Filter);
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+internal class WebhookValidationOptions
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    public string? PublicKeyDerBase64 { get; set; }
 }
